@@ -1,5 +1,6 @@
 from keras.datasets import imdb
 from keras.models import Sequential
+from keras import layers
 from keras.layers import Dense, Dropout
 from keras.callbacks import EarlyStopping, Callback
 from keras import backend as K
@@ -26,7 +27,7 @@ def getImdb():
     num_words = 2048
     maxlen = 256
     val_split = 8192
-    input_shape = (num_words,)
+    input_shape = {'dense': (num_words,), 'cnn1D': (num_words, 1)}
 
     def vectorize_sequences(sequences, dimension=10000):
         results = np.zeros((len(sequences), dimension))
@@ -48,59 +49,88 @@ def getImdb():
     yVtrain = y_train[val_split:val_split * 3]
     y_test = np.asarray(y_test).astype('float32')
 
-    return (input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs)
+    return (num_words, maxlen, input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs)
 
+xVtrain, x_train, x_test, x_val = {}, {}, {}, {} 
+num_words, maxlen, input_shape, xVtrain['dense'], x_train['dense'], x_test['dense'], x_val['dense'], y_val, yVtrain, y_train, y_test, epochs = getImdb()
 
-input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs = getImdb()
+x_train['cnn1D'] = x_train['dense']#np.expand_dims(x_train['dense'], axis=2)
+xVtrain['cnn1D'] = xVtrain['dense']#np.expand_dims(xVtrain['dense'], axis=2)
+x_test['cnn1D']  = x_test['dense']#np.expand_dims(x_test['dense'], axis=2)
+x_val['cnn1D']  = x_val['dense']#np.expand_dims(x_val['dense'], axis=2)
 
 early_stopper_fit = EarlyStopping(monitor='val_acc', min_delta=0.001, patience=1, verbose=0, mode='auto')
 early_stopper_train = EarlyStopping(monitor='acc', min_delta=0.001, patience=3, verbose=0, mode='auto')
 
 
-class Individual:
+class Indiv:
     nb_layers = range(1, 6 + 1)
     nb_weights = [1, 2, 4, 8, 16, 32, 64]
-    batch_size = [16, 32, 64, 128, 256]
+    batch_size = [32, 64, 128, 256, 512]
+    dropout_rate = {'min': 0.1, 'max': 0.6, 'precision': 2}
     activation = ['relu', 'elu', 'tanh', 'sigmoid', 'hard_sigmoid', 'softplus', 'linear']
     optimizer = ['rmsprop', 'adam', 'adagrad', 'adadelta', 'adamax', 'nadam']
+    kernel = range(1,10)
+    stride = [1,2,3,4,5]
+
+    @staticmethod
+    def _gaussianInRange(range, mean=None):
+        if mean is None:
+            mean = (range['max']+range['min'])/2
+        sd = mean/4
+        return np.clip(round(np.random.normal(mean, sd), range["precision"]), range["min"], range["max"])
 
     # Creates a random space or initialize one from a dictionary or JSON string
-    def __init__(self, space=None):
+    def __init__(self, space=None, type="dense"):
+        self.type = type
         self.space = (json.loads(space) if isinstance(space, str) else space) if space is not None else {
-            "nb_weights": np.random.choice(Individual.nb_weights, np.random.choice(Individual.nb_layers)).tolist(),
-            "batch_size": np.random.choice(Individual.batch_size),
-            "activation": np.random.choice(Individual.activation),
-            "optimizer": np.random.choice(Individual.optimizer)
+            "nb_weights": np.random.choice(Indiv.nb_weights, np.random.choice(Indiv.nb_layers)).tolist(),
+            "batch_size": random.choice(Indiv.batch_size),
+            "activation": random.choice(Indiv.activation),
+            "optimizer": random.choice(Indiv.optimizer)
         }
+        if self.type=="dense":            
+            self.space["dropout_rate"] = Indiv._gaussianInRange(Indiv.dropout_rate)
+        elif self.type=="cnn1D":
+            self.space["kernel"] = random.choice(Indiv.kernel)
+            self.space["stride"] = random.choice(Indiv.stride)
         self.fitness = None
         self.gen = None
 
-    def _createModel(self, dropout=0.2):
+    def _createModel(self):
         model = Sequential()
-        model.add(Dense(
-            self.space["nb_weights"][0], activation=self.space["activation"], input_shape=input_shape))
-        for i in range(1, len(self.space["nb_weights"])):
-            model.add(
-                Dense(self.space["nb_weights"][i], activation=self.space["activation"]))
-            if dropout is not None:
-                model.add(Dropout(dropout))
+        if self.type=="dense":
+            model.add(Dense(self.space["nb_weights"][0], activation=self.space["activation"], input_shape=input_shape['dense']))
+            for i in range(1, len(self.space["nb_weights"])):
+                model.add(Dense(self.space["nb_weights"][i], activation=self.space["activation"]))
+                model.add(Dropout(self.space["dropout_rate"]))
+        elif self.type=="cnn1D":
+            self.space['kernel']=min(self.space['kernel'], min(self.space['nb_weights']))
+            model.add(layers.Embedding(num_words, self.space['batch_size'], input_length=maxlen))
+            model.add(layers.Conv1D(self.space["nb_weights"][0], self.space["kernel"], strides=self.space["stride"], activation=self.space["activation"]))#, input_shape=input_shape['cnn1D']))
+            model.add(layers.MaxPooling1D(self.space["kernel"]))
+            for i in range(1, len(self.space["nb_weights"])):
+                model.add(layers.Conv1D(self.space["nb_weights"][i], self.space["kernel"], strides=self.space["stride"], activation=self.space["activation"]))
+                model.add(layers.MaxPooling1D(self.space["kernel"]))
+            model.add(layers.GlobalMaxPooling1D())
+
         model.add(Dense(1, activation='sigmoid'))
         model.compile(loss='binary_crossentropy',
                       optimizer=self.space["optimizer"],
                       metrics=['accuracy'])
         return model
 
-    def computeFitness(self, dropout=0.2, verbose=1):
+    def computeFitness(self, verbose=1):
         if verbose > 0: self.print(fit=False)
-        model = self._createModel(dropout)
+        model = self._createModel()
         self.fitness = max(
             model.fit(
-                xVtrain,
+                xVtrain[self.type],
                 yVtrain,
                 batch_size=self.space["batch_size"],
                 epochs=epochs,
                 verbose=verbose,
-                validation_data=(x_val, y_val),
+                validation_data=(x_val[self.type], y_val),
                 callbacks=[early_stopper_fit]
             ).history['val_acc']
         )
@@ -108,20 +138,20 @@ class Individual:
         if verbose > 0: self.print(archi=False)
 
     # Trains the model on all training data
-    def train(self, epoch, dropout=0.2):
+    def train(self, epoch):
         self.print(fit=False)
-        self.model = self._createModel(dropout)
-        self.fitness = self.model.fit(x_train, y_train,
+        self.model = self._createModel()
+        self.fitness = self.model.fit(x_train[self.type], y_train,
                                       batch_size=self.space["batch_size"],
                                       epochs=epoch,
                                       verbose=1,
                                       callbacks=[early_stopper_train]).history['acc'][-1]
-        logging.info("Fitness: " + str(self.fitness))
+        self.print(archi=False)
 
     # Tests the model
     def test(self):
         self.print()
-        score = self.model.evaluate(x_test, y_test)
+        score = self.model.evaluate(x_test[self.type], y_test)
         logging.info("Test score: " + str(score))
 
     @staticmethod
@@ -140,35 +170,49 @@ class Individual:
         return axis[(random.choice([-1, 1]) + axis.index(param)) % len(axis)]
 
     def _mutActivation(self):
-        self.space["activation"] = self._mutNearby(self.space["activation"], Individual.activation)
+        self.space["activation"] = self._mutNearby(self.space["activation"], Indiv.activation)
     
     def _mutOptimizer(self):
-        self.space["optimizer"] = self._mutNearby(self.space["optimizer"], Individual.optimizer)
+        self.space["optimizer"] = self._mutNearby(self.space["optimizer"], Indiv.optimizer)
 
     def _mutBatchSize(self):
-        self.space["batch_size"] = self._mutNearby(self.space["batch_size"], Individual.batch_size)
+        self.space["batch_size"] = self._mutNearby(self.space["batch_size"], Indiv.batch_size)
+
+    def _mutDropoutRate(self):
+        self.space["dropout_rate"] = self._gaussianInRange(Indiv.dropout_rate, mean=self.space["dropout_rate"])
     
     def _mutLayers(self):
         weight = self.space["nb_weights"]
-        if len(weight)==max(Individual.nb_layers) or (random.randint(0,1)==0 and len(weight)>min(Individual.nb_layers)):
+        if len(weight)==max(Indiv.nb_layers) or (random.randint(0,1)==0 and len(weight)>min(Indiv.nb_layers)):
             weight.pop(random.randrange(len(weight))) # rm layer
         else:
-            weight.insert(random.randrange(len(weight) + 1), random.choice(Individual.nb_weights))  # add layer
+            weight.insert(random.randrange(len(weight) + 1), random.choice(Indiv.nb_weights))  # add layer
 
     def _mutWeights(self):
         weight = self.space["nb_weights"]
         i = random.randrange(len(weight))
-        weight[i] = self._mutNearby(weight[i], Individual.nb_weights)
+        weight[i] = self._mutNearby(weight[i], Indiv.nb_weights)
+
+    def _mutKernel(self):
+        self.space["kernel"] = self._mutNearby(self.space["kernel"], Indiv.kernel)
+
+    def _mutStride(self):
+        self.space["stride"] = self._mutNearby(self.space["stride"], Indiv.stride)
 
     def mutate(self):
         mutations = [self._mutLayers, self._mutWeights, self._mutActivation, self._mutOptimizer, self._mutBatchSize]
+        if self.type=="dense":
+            mutations.append(self._mutDropoutRate)
+        elif self.type=="cnn1D":
+            mutations.append(self._mutKernel)
+            mutations.append(self._mutStride)
         random.choice(mutations)()
         return self
 
-    def print(self, archi=True, fit=True, toStr=False, gen=False):
+    def print(self, archi=True, fit=True, toStr=False, gen=False, precision=5):
         msg = ""
-        if fit: 
-            msg = "Fitness: " + str(self.fitness)
+        if fit and self.fitness is not None: 
+            msg = "Fitness: " + str(round(self.fitness, precision))
             if gen or archi: msg += " | "
         if gen:
             msg += "Gen: " + str(self.gen)
@@ -180,14 +224,14 @@ class Individual:
 
 class Pop:
 
-    def __init__(self, size, individuals=[]):
+    def __init__(self, size, individuals=[], type="dense"):
         assert(size >= len(individuals))
         self.size = size
-        self.generation = [Individual(space) for space in individuals] + [Individual() for _ in range(size - len(individuals))]
+        self.generation = [Indiv(space, type=type) for space in individuals] + [Indiv(type=type) for _ in range(size - len(individuals))]
         self.nextGen = []
         self.best = []
 
-    def evolve(self, nb_gen=16, selection=0.25, verbose=1):  # implement delta to stop when it doesn't improve
+    def evolve(self, nb_gen=16, selection=0.33, verbose=1):  # implement delta to stop when it doesn't improve
         assert(selection <= 0.33)
         top = int(selection * self.size)
 
@@ -198,8 +242,8 @@ class Pop:
             self.generationSummary(i)
             
             self.nextGen[:2 * top] = [copy.deepcopy(ind).mutate() for ind in (self.generation[:top] + random.sample(self.generation[top:], top))]  # keep firsts and others at random
-            self.nextGen[2 * top:3 * top] = list(itertools.chain.from_iterable([Individual.breed(self.generation[k], self.generation[k + 1]) for k in range(top)]))  # breed firsts
-            self.nextGen[3 * top:] = [Individual() for _ in range(self.size - 3 * top)] # fill with new random individuals
+            self.nextGen[2 * top:3 * top] = list(itertools.chain.from_iterable([Indiv.breed(self.generation[k], self.generation[k + 1]) for k in range(top)]))  # breed firsts
+            self.nextGen[3 * top:] = [Indiv(type=type) for _ in range(self.size - 3 * top)] # fill with new random individuals
 
             self.enforceUniqueness()
 
@@ -231,5 +275,5 @@ def main():
     pop.evolve(4)
     pop.printTop()
 
-#if __name__ == '__main__':
- #   main()
+if __name__ == '__main__':
+    i=Indiv()
