@@ -50,49 +50,56 @@ def getImdb():
 
     return (input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs)
 
-
 input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs = getImdb()
 
 early_stopper_fit = EarlyStopping(monitor='val_acc', min_delta=0.001, patience=1, verbose=0, mode='auto')
 early_stopper_train = EarlyStopping(monitor='acc', min_delta=0.001, patience=3, verbose=0, mode='auto')
 
 
-class Individual:
+class Indiv:
     nb_layers = range(1, 6 + 1)
     nb_weights = [1, 2, 4, 8, 16, 32, 64]
-    batch_size = [16, 32, 64, 128, 256]
+    batch_size = [32, 64, 128, 256, 512]
+    dropout_rate = {'min': 0.1, 'max': 0.6, 'precision': 2}
     activation = ['relu', 'elu', 'tanh', 'sigmoid', 'hard_sigmoid', 'softplus', 'linear']
     optimizer = ['rmsprop', 'adam', 'adagrad', 'adadelta', 'adamax', 'nadam']
+
+    @staticmethod
+    def _gaussianInRange(range, mean=None):
+        if mean is None:
+            mean = (range['max']+range['min'])/2
+        sd = mean/4
+        return np.clip(round(np.random.normal(mean, sd), range["precision"]), range["min"], range["max"])
 
     # Creates a random space or initialize one from a dictionary or JSON string
     def __init__(self, space=None):
         self.space = (json.loads(space) if isinstance(space, str) else space) if space is not None else {
-            "nb_weights": np.random.choice(Individual.nb_weights, np.random.choice(Individual.nb_layers)).tolist(),
-            "batch_size": np.random.choice(Individual.batch_size),
-            "activation": np.random.choice(Individual.activation),
-            "optimizer": np.random.choice(Individual.optimizer)
+            "nb_weights": np.random.choice(Indiv.nb_weights, np.random.choice(Indiv.nb_layers)).tolist(),
+            "batch_size": random.choice(Indiv.batch_size),
+            "activation": random.choice(Indiv.activation),
+            "optimizer": random.choice(Indiv.optimizer),
+            "dropout_rate": Indiv._gaussianInRange(Indiv.dropout_rate)
         }
         self.fitness = None
         self.gen = None
 
-    def _createModel(self, dropout=0.2):
+    def _createModel(self):
         model = Sequential()
-        model.add(Dense(
-            self.space["nb_weights"][0], activation=self.space["activation"], input_shape=input_shape))
+        model.add(Dense(self.space["nb_weights"][0], activation=self.space["activation"], input_shape=input_shape))
+        
         for i in range(1, len(self.space["nb_weights"])):
-            model.add(
-                Dense(self.space["nb_weights"][i], activation=self.space["activation"]))
-            if dropout is not None:
-                model.add(Dropout(dropout))
+            model.add(Dense(self.space["nb_weights"][i], activation=self.space["activation"]))
+            model.add(Dropout(self.space["dropout_rate"]))
+
         model.add(Dense(1, activation='sigmoid'))
         model.compile(loss='binary_crossentropy',
                       optimizer=self.space["optimizer"],
                       metrics=['accuracy'])
         return model
 
-    def computeFitness(self, dropout=0.2, verbose=1):
+    def computeFitness(self, verbose=1):
         if verbose > 0: self.print(fit=False)
-        model = self._createModel(dropout)
+        model = self._createModel()
         self.fitness = max(
             model.fit(
                 xVtrain,
@@ -108,15 +115,15 @@ class Individual:
         if verbose > 0: self.print(archi=False)
 
     # Trains the model on all training data
-    def train(self, epoch, dropout=0.2):
+    def train(self, epoch):
         self.print(fit=False)
-        self.model = self._createModel(dropout)
+        self.model = self._createModel()
         self.fitness = self.model.fit(x_train, y_train,
                                       batch_size=self.space["batch_size"],
                                       epochs=epoch,
                                       verbose=1,
                                       callbacks=[early_stopper_train]).history['acc'][-1]
-        logging.info("Fitness: " + str(self.fitness))
+        self.print(archi=False)
 
     # Tests the model
     def test(self):
@@ -140,35 +147,38 @@ class Individual:
         return axis[(random.choice([-1, 1]) + axis.index(param)) % len(axis)]
 
     def _mutActivation(self):
-        self.space["activation"] = self._mutNearby(self.space["activation"], Individual.activation)
+        self.space["activation"] = self._mutNearby(self.space["activation"], Indiv.activation)
     
     def _mutOptimizer(self):
-        self.space["optimizer"] = self._mutNearby(self.space["optimizer"], Individual.optimizer)
+        self.space["optimizer"] = self._mutNearby(self.space["optimizer"], Indiv.optimizer)
 
     def _mutBatchSize(self):
-        self.space["batch_size"] = self._mutNearby(self.space["batch_size"], Individual.batch_size)
+        self.space["batch_size"] = self._mutNearby(self.space["batch_size"], Indiv.batch_size)
+
+    def _mutDropoutRate(self):
+        self.space["dropout_rate"] = self._gaussianInRange(Indiv.dropout_rate, mean=self.space["dropout_rate"])
     
     def _mutLayers(self):
         weight = self.space["nb_weights"]
-        if len(weight)==max(Individual.nb_layers) or (random.randint(0,1)==0 and len(weight)>min(Individual.nb_layers)):
+        if len(weight)==max(Indiv.nb_layers) or (random.randint(0,1)==0 and len(weight)>min(Indiv.nb_layers)):
             weight.pop(random.randrange(len(weight))) # rm layer
         else:
-            weight.insert(random.randrange(len(weight) + 1), random.choice(Individual.nb_weights))  # add layer
+            weight.insert(random.randrange(len(weight) + 1), random.choice(Indiv.nb_weights))  # add layer
 
     def _mutWeights(self):
         weight = self.space["nb_weights"]
         i = random.randrange(len(weight))
-        weight[i] = self._mutNearby(weight[i], Individual.nb_weights)
+        weight[i] = self._mutNearby(weight[i], Indiv.nb_weights)
 
     def mutate(self):
-        mutations = [self._mutLayers, self._mutWeights, self._mutActivation, self._mutOptimizer, self._mutBatchSize]
+        mutations = [self._mutLayers, self._mutWeights, self._mutActivation, self._mutOptimizer, self._mutBatchSize, self._mutDropoutRate]
         random.choice(mutations)()
         return self
 
-    def print(self, archi=True, fit=True, toStr=False, gen=False):
+    def print(self, archi=True, fit=True, toStr=False, gen=False, precision=5):
         msg = ""
-        if fit: 
-            msg = "Fitness: " + str(self.fitness)
+        if fit and self.fitness is not None: 
+            msg = "Fitness: " + str(round(self.fitness, precision))
             if gen or archi: msg += " | "
         if gen:
             msg += "Gen: " + str(self.gen)
@@ -183,11 +193,11 @@ class Pop:
     def __init__(self, size, individuals=[]):
         assert(size >= len(individuals))
         self.size = size
-        self.generation = [Individual(space) for space in individuals] + [Individual() for _ in range(size - len(individuals))]
+        self.generation = [Indiv(space) for space in individuals] + [Indiv() for _ in range(size - len(individuals))]
         self.nextGen = []
         self.best = []
 
-    def evolve(self, nb_gen=16, selection=0.25, verbose=1):  # implement delta to stop when it doesn't improve
+    def evolve(self, nb_gen=16, selection=0.33, verbose=1):  # implement delta to stop when it doesn't improve
         assert(selection <= 0.33)
         top = int(selection * self.size)
 
@@ -198,8 +208,8 @@ class Pop:
             self.generationSummary(i)
             
             self.nextGen[:2 * top] = [copy.deepcopy(ind).mutate() for ind in (self.generation[:top] + random.sample(self.generation[top:], top))]  # keep firsts and others at random
-            self.nextGen[2 * top:3 * top] = list(itertools.chain.from_iterable([Individual.breed(self.generation[k], self.generation[k + 1]) for k in range(top)]))  # breed firsts
-            self.nextGen[3 * top:] = [Individual() for _ in range(self.size - 3 * top)] # fill with new random individuals
+            self.nextGen[2 * top:3 * top] = list(itertools.chain.from_iterable([Indiv.breed(self.generation[k], self.generation[k + 1]) for k in range(top)]))  # breed firsts
+            self.nextGen[3 * top:] = [Indiv() for _ in range(self.size - 3 * top)] # fill with new random individuals
 
             self.enforceUniqueness()
 
@@ -231,5 +241,5 @@ def main():
     pop.evolve(4)
     pop.printTop()
 
-#if __name__ == '__main__':
- #   main()
+if __name__ == '__main__':
+    i=Indiv()
