@@ -22,7 +22,6 @@ logging.basicConfig(
     )
 
 def getImdb():
-    batch_size = 256
     epochs = 6
     num_words = 2048
     maxlen = 256
@@ -49,26 +48,27 @@ def getImdb():
     yVtrain = y_train[val_split:val_split * 3]
     y_test = np.asarray(y_test).astype('float32')
 
-    return (batch_size, input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs)
+    return (input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs)
 
 
-batch_size, input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs = getImdb()
+input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs = getImdb()
 
 early_stopper_fit = EarlyStopping(monitor='val_acc', min_delta=0.001, patience=1, verbose=0, mode='auto')
 early_stopper_train = EarlyStopping(monitor='acc', min_delta=0.001, patience=3, verbose=0, mode='auto')
 
 
 class Individual:
-    nb_layers = range(1, 8 + 1)
-    nb_weights = [2**n for n in range(0, 6 + 1)]
-    activation = ['relu', 'elu', 'tanh', 'sigmoid',
-                  'hard_sigmoid', 'softplus', 'linear']
+    nb_layers = range(1, 6 + 1)
+    nb_weights = [1, 2, 4, 8, 16, 32, 64]
+    batch_size = [16, 32, 64, 128, 256]
+    activation = ['relu', 'elu', 'tanh', 'sigmoid', 'hard_sigmoid', 'softplus', 'linear']
     optimizer = ['rmsprop', 'adam', 'adagrad', 'adadelta', 'adamax', 'nadam']
 
     # Creates a random space or initialize one from a dictionary or JSON string
     def __init__(self, space=None):
         self.space = (json.loads(space) if isinstance(space, str) else space) if space is not None else {
             "nb_weights": np.random.choice(Individual.nb_weights, np.random.choice(Individual.nb_layers)).tolist(),
+            "batch_size": np.random.choice(Individual.batch_size),
             "activation": np.random.choice(Individual.activation),
             "optimizer": np.random.choice(Individual.optimizer)
         }
@@ -97,7 +97,7 @@ class Individual:
             model.fit(
                 xVtrain,
                 yVtrain,
-                batch_size=batch_size,
+                batch_size=self.space["batch_size"],
                 epochs=epochs,
                 verbose=verbose,
                 validation_data=(x_val, y_val),
@@ -112,7 +112,7 @@ class Individual:
         self.print(fit=False)
         self.model = self._createModel(dropout)
         self.fitness = self.model.fit(x_train, y_train,
-                                      batch_size=batch_size,
+                                      batch_size=self.space["batch_size"],
                                       epochs=epoch,
                                       verbose=1,
                                       callbacks=[early_stopper_train]).history['acc'][-1]
@@ -144,22 +144,24 @@ class Individual:
     
     def _mutOptimizer(self):
         self.space["optimizer"] = self._mutNearby(self.space["optimizer"], Individual.optimizer)
+
+    def _mutBatchSize(self):
+        self.space["batch_size"] = self._mutNearby(self.space["batch_size"], Individual.batch_size)
     
     def _mutLayers(self):
         weight = self.space["nb_weights"]
-        if random.randint(0,1)==0 and len(weight)>1:
+        if len(weight)==max(Individual.nb_layers) or (random.randint(0,1)==0 and len(weight)>min(Individual.nb_layers)):
             weight.pop(random.randrange(len(weight))) # rm layer
         else:
             weight.insert(random.randrange(len(weight) + 1), random.choice(Individual.nb_weights))  # add layer
 
     def _mutWeights(self):
         weight = self.space["nb_weights"]
-        print(weight)
         i = random.randrange(len(weight))
         weight[i] = self._mutNearby(weight[i], Individual.nb_weights)
 
     def mutate(self):
-        mutations = [self._mutLayers, self._mutWeights, self._mutActivation, self._mutOptimizer]
+        mutations = [self._mutLayers, self._mutWeights, self._mutActivation, self._mutOptimizer, self._mutBatchSize]
         random.choice(mutations)()
         return self
 
@@ -206,7 +208,7 @@ class Pop:
     # use ordered dictionary with unique id based on space attribute
     def enforceUniqueness(self):
         for ind in self.nextGen:
-            while (ind.space in [e.space for e in self.best]):
+            while (ind.space in [e.space for e in self.best]+[e.space for e in self.nextGen if e!=ind]):
                 ind.mutate()
 
     def printTop(self, n=None):
