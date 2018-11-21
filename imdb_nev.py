@@ -21,6 +21,12 @@ logging.basicConfig(
     #filename='log.txt'
     )
 
+import multiprocessing as mp
+
+def worker(arg):
+    obj, methname = arg[:2]
+    return getattr(obj, methname)(*arg[2:])
+
 def getImdb():
     epochs = 6
     num_words = 2048
@@ -59,7 +65,7 @@ early_stopper_train = EarlyStopping(monitor='acc', min_delta=0.001, patience=3, 
 class Indiv:
     nb_layers = range(1, 6 + 1)
     nb_weights = [1, 2, 4, 8, 16, 32, 64]
-    batch_size = [32, 64, 128, 256, 512]
+    batch_size = [32, 64, 128, 256]
     dropout_rate = {'min': 0.1, 'max': 0.6, 'precision': 2}
     activation = ['relu', 'elu', 'tanh', 'sigmoid', 'hard_sigmoid', 'softplus', 'linear']
     optimizer = ['rmsprop', 'adam', 'adagrad', 'adadelta', 'adamax', 'nadam']
@@ -113,6 +119,7 @@ class Indiv:
         )
         K.clear_session()
         if verbose > 0: self.print(archi=False)
+        return self
 
     # Trains the model on all training data
     def train(self, epoch):
@@ -202,7 +209,7 @@ class Pop:
         top = int(selection * self.size)
 
         for i in range(nb_gen):
-            for ind in self.generation: ind.computeFitness(verbose=verbose)
+            self.generation = list(mp.Pool().map(worker, ((ind, "computeFitness", verbose) for ind in self.generation)))
             self.generation.sort(key=lambda ind: ind.fitness, reverse=True)
             self.best = list(heapq.merge(self.best, self.generation, key=lambda ind: ind.fitness, reverse=True))
             self.generationSummary(i)
@@ -215,7 +222,7 @@ class Pop:
 
             self.generation = self.nextGen
 
-    # use ordered dictionary with unique id based on space attribute
+    # more efficient: use ordered dictionary with unique id based on space attribute
     def enforceUniqueness(self):
         for ind in self.nextGen:
             while (ind.space in [e.space for e in self.best]+[e.space for e in self.nextGen if e!=ind]):
@@ -241,5 +248,5 @@ def main():
     pop.evolve(4)
     pop.printTop()
 
-if __name__ == '__main__':
-    i=Indiv()
+#if __name__ == '__main__':
+#    i=Indiv()
