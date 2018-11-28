@@ -1,0 +1,59 @@
+Train on 16384 samples, validate on 8192 samples
+
+1. Architecture 6: {"nb_weights": [8], "batch_size": 32, "activation": "hard_sigmoid", "optimizer": "rmsprop", "dropout_rate": 0.16}
+Epoch 3/999
+16384/16384 [==============================] - 2s 92us/step - loss: 0.2216 - acc: 0.9189 - val_loss: 0.2709 - val_acc: 0.89294
+Test score (3 epochs): [0.2704123501682282, 0.89308]
+
+
+2. Architecture 8: {"nb_weights": [4], "batch_size": 32, "activation": "sigmoid", "optimizer": "rmsprop", "dropout_rate": 0.17}
+Epoch 6/999
+16384/16384 [==============================] - 1s 91us/step - loss: 0.1751 - acc: 0.9398 - val_loss: 0.2662 - val_acc: 0.89502
+Test score (3 epochs): [0.2732127723789215, 0.89304]
+
+
+3. Architecture 3: {"nb_weights": [32, 16], "batch_size": 32, "activation": "hard_sigmoid", "optimizer": "rmsprop", "dropout_rate": 0.17}
+Epoch 3/999
+16384/16384 [==============================] - 2s 138us/step - loss: 0.1953 - acc: 0.9262 - val_loss: 0.2681 - val_acc: 0.89392
+Test score (2 epochs): [0.2682326140499115, 0.89256]
+
+
+4. Architecture 2: {"nb_weights": [8, 2, 16], "batch_size": 32, "activation": "sigmoid", "optimizer": "rmsprop", "dropout_rate": 0.13}
+Epoch 5/999
+16384/16384 [==============================] - 2s 116us/step - loss: 0.2614 - acc: 0.8748 - val_loss: 0.2725 - val_acc: 0.89514
+Test score (3 epochs): [0.2891270109462738, 0.89196]
+
+
+5. Architecture 1: {"nb_weights": [32], "batch_size": 32, "activation": "hard_sigmoid", "optimizer": "rmsprop", "dropout_rate": 0.17}
+Epoch 2/999
+16384/16384 [==============================] - 2s 128us/step - loss: 0.2318 - acc: 0.9111 - val_loss: 0.2680 - val_acc: 0.89197
+Test score (2 epochs): [0.2721300804901123, 0.89144]
+
+
+6. Architecture 9: {"nb_weights": [2, 16], "batch_size": 32, "activation": "sigmoid", "optimizer": "rmsprop", "dropout_rate": 0.13}
+Epoch 6/999
+16384/16384 [==============================] - 2s 99us/step - loss: 0.1745 - acc: 0.9383 - val_loss: 0.2776 - val_acc: 0.8927
+Test score (3 epochs): [0.26963774064540863, 0.89136]
+
+7. Architecture 7: {"nb_weights": [2, 16, 2], "batch_size": 32, "activation": "hard_sigmoid", "optimizer": "rmsprop", "dropout_rate": 0.13}
+Epoch 6/999
+16384/16384 [==============================] - 2s 106us/step - loss: 0.2862 - acc: 0.9099 - val_loss: 0.3140 - val_acc: 0.88696
+Test score (4 epochs): [0.28169066931724546, 0.89108]
+
+
+8. Architecture 5: {"nb_weights": [16, 2, 8, 2, 2], "batch_size": 32, "activation": "sigmoid", "optimizer": "rmsprop", "dropout_rate": 0.13}
+Epoch 4/999
+16384/16384 [==============================] - 2s 132us/step - loss: 0.5871 - acc: 0.7851 - val_loss: 0.5175 - val_acc: 0.89038
+Test score (3 epochs): Test score: [0.601822700138092, 0.89028]
+
+
+9. Architecture 10: {"nb_weights": [2, 2], "batch_size": 64, "activation": "relu", "optimizer": "rmsprop", "dropout_rate": 0.18}
+Epoch 4/999
+16384/16384 [==============================] - 1s 78us/step - loss: 0.4183 - acc: 0.8407 - val_loss: 0.3860 - val_acc: 0.88245
+Test score (3 epochs): [0.37636877173423766, 0.88212]
+
+
+10. Architecture 4: {"nb_weights": [1, 8], "batch_size": 32, "activation": "relu", "optimizer": "rmsprop", "dropout_rate": 0.18}
+Epoch 2/999
+16384/16384 [==============================] - 2s 118us/step - loss: 0.4202 - acc: 0.8758 - val_loss: 0.4060 - val_acc: 0.86609
+Test score (2 epochs): [0.324275988483429, 0.87464]

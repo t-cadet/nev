@@ -14,13 +14,6 @@ import heapq
 import copy
 import itertools
 
-logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%m/%d/%Y %I:%M:%S %p',
-    level=logging.INFO#,
-    #filename='log.txt'
-    )
-
 import multiprocessing as mp
 
 def worker(arg):
@@ -56,6 +49,7 @@ def getImdb():
 
     return (input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs)
 
+print("Loading data...")
 input_shape, xVtrain, x_train, x_test, x_val, y_val, yVtrain, y_train, y_test, epochs = getImdb()
 
 early_stopper_fit = EarlyStopping(monitor='val_acc', min_delta=0.001, patience=1, verbose=0, mode='auto')
@@ -209,13 +203,13 @@ class Pop:
         top = int(selection * self.size)
 
         for i in range(nb_gen):
-            self.generation = list(mp.Pool().map(worker, ((ind, "computeFitness", verbose) for ind in self.generation)))
+            self.generation = list(mp.Pool(1).map(worker, ((ind, "computeFitness", verbose) for ind in self.generation))) #compute fitness of different indiv in parallel
             self.generation.sort(key=lambda ind: ind.fitness, reverse=True)
             self.best = list(heapq.merge(self.best, self.generation, key=lambda ind: ind.fitness, reverse=True))
             self.generationSummary(i)
             
-            self.nextGen[:2 * top] = [copy.deepcopy(ind).mutate() for ind in (self.generation[:top] + random.sample(self.generation[top:], top))]  # keep firsts and others at random
-            self.nextGen[2 * top:3 * top] = list(itertools.chain.from_iterable([Indiv.breed(self.generation[k], self.generation[k + 1]) for k in range(top)]))  # breed firsts
+            self.nextGen[:2 * top] = [copy.deepcopy(ind).mutate() for ind in (self.best[:top] + random.sample(self.generation, top))]  # keep firsts and others at random
+            self.nextGen[2 * top:3 * top] = list(itertools.chain.from_iterable([Indiv.breed(self.best[k], self.best[k + 1]) for k in range(top)]))  # breed firsts
             self.nextGen[3 * top:] = [Indiv() for _ in range(self.size - 3 * top)] # fill with new random individuals
 
             self.enforceUniqueness()
@@ -242,11 +236,29 @@ class Pop:
         logging.info("----- Generation " + str(i) + " -----")
         logging.info("Average fitness: " + str(avg))
         logging.info("Best: " + self.best[0].print(toStr=True))
+        logging.info(self.printTop(99999999))
+
+SIZE_POP = 8
+NB_GEN = 4
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%m/%d/%Y %I:%M:%S %p',
+    level=logging.INFO#,
+    #filename="log"+str(SIZE_POP)+"_"+str(NB_GEN)+".txt"
+    )
 
 def main():
-    pop = Pop(8)
-    pop.evolve(4)
-    pop.printTop()
+    import time
+    # import os
+    # import tensorflow as tf
+    # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
-#if __name__ == '__main__':
-#    i=Indiv()
+    start = time.time()
+    pop = Pop(SIZE_POP)
+    pop.evolve(NB_GEN, verbose=1)
+    end = time.time()
+    logging.info("time: " + str(end-start))
+    pop.printTop(SIZE_POP*NB_GEN)
+
+if __name__ == '__main__':
+   main()
